@@ -24,6 +24,13 @@
 #include "stb_image.h"
 // a Render works like this: you give it a command and it renders that thing
 
+//bool isWindowResizedByCode = false;
+float zoom = 1.0f;
+float rotation = 0.0f;
+bool rotatedImage = false;
+
+//void window_size_callback(GLFWwindow* window, int width, int height);
+void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
 int main(void)
 {
     GLFWwindow* window;
@@ -134,6 +141,11 @@ int main(void)
         ImGui_ImplGlfw_InitForOpenGL(window, true);
         ImGui_ImplOpenGL3_Init("#version 130");
 
+        // trigger an event when the window is resized
+        //glfwSetWindowSizeCallback(window, window_size_callback);
+        glfwSetScrollCallback(window, scroll_callback);
+        
+
         glm::vec3 translationA(0, 0, 0);
 
         /*
@@ -153,9 +165,9 @@ int main(void)
         float imageWidthScale = 0.0f;
         float imageHeightScale = 0.0f;
 
-        float rotation = 0.0f;
+        //float rotation = 0.0f;
 
-        bool rotatedImage = false;
+        //bool rotatedImage = false;
         int temporaryImageWidth = 0;
         int temporaryImageHeight = 0;
         float temporaryRotation = 0;
@@ -244,23 +256,42 @@ int main(void)
             // also we probably need to do this by updating vertices so back to original plan
             */
 
-            temporaryImageWidth = scaledImageWidth;
-            temporaryImageHeight = scaledImageHeight;
+            temporaryImageWidth = scaledImageWidth * zoom;
+            temporaryImageHeight = scaledImageHeight * zoom;
             absoluteRotation = glm::abs(rotation);
             temporaryRotation = absoluteRotation;
 
+            //isWindowResizedByCode = false;
+
+            int state = glfwGetKey(window, GLFW_KEY_RIGHT);
+            if (state == GLFW_PRESS)
+            {
+                if(rotation > 360) rotation = 0.0f;
+                rotation += 0.5f;
+                rotatedImage = true;
+            }
+            state = glfwGetKey(window, GLFW_KEY_LEFT);
+            if (state == GLFW_PRESS)
+            {
+                if(rotation < -360) rotation = 0.0f;
+                rotation -= 0.5f;
+                rotatedImage = true;
+            }
+
+            
             // Adjusting window size to accommodate rotated image
             if(rotatedImage){
                 if(absoluteRotation >= 90 && absoluteRotation <= 180){
-                    temporaryImageWidth = scaledImageHeight;
-                    temporaryImageHeight = scaledImageWidth;
+                    // the * zoom can be done only once, right now just for testing
+                    temporaryImageWidth = scaledImageHeight * zoom;
+                    temporaryImageHeight = scaledImageWidth * zoom;
                     temporaryRotation = absoluteRotation - 90;
                 }
                 else if(absoluteRotation > 180){
                     temporaryRotation = absoluteRotation - 180;
                     if(absoluteRotation > 270){
-                        temporaryImageWidth = imageHeight;
-                        temporaryImageHeight = imageWidth;
+                        temporaryImageWidth = scaledImageHeight * zoom;
+                        temporaryImageHeight = scaledImageWidth * zoom;
                         temporaryRotation = temporaryRotation - 90;
                     }
                 }
@@ -274,16 +305,32 @@ int main(void)
                 d = temporaryImageWidth * glm::cos(degreeOfRotation);
                 e = temporaryImageWidth * glm::sin(degreeOfRotation);
 
-                glfwSetWindowSize(window, (int)(c + d + 1), (int)(e + f + 1));
+                int adjustedWindowWidth = c + d + 1;
+                int adjustedWindowHeight = e + f + 1;
+
+                if(adjustedWindowWidth > windowWidth || adjustedWindowHeight > windowHeight/* || abs(rotation) == 360 || rotation == 0*/){
+                    int windowXPos = 0;
+                    int windowYPos = 0;
+                    int widthDifference = (adjustedWindowWidth - windowWidth) / 2;
+                    int heightDifference = (adjustedWindowHeight - windowHeight)/ 2;
+                    glfwGetWindowPos(window, &windowXPos, &windowYPos);;
+                    glfwSetWindowPos(window, windowXPos - (widthDifference/2), windowYPos - (heightDifference/2));
+
+                    glfwSetWindowSize(window, windowWidth + widthDifference, windowHeight + heightDifference);
+                }
+                    //glfwSetWindowSize(window, (int)(c + d + 1), (int)(e + f + 1));
+                rotatedImage = false;
             }
+            
 
             {
                 glm::mat4 modelMatrix = glm::translate(glm::mat4(1.0f), translationA);
                 //modelMatrix = glm::scale(modelMatrix, glm::vec3(0.75, 0.75, 0));
                 modelMatrix = glm::translate(modelMatrix, glm::vec3((scaledImageWidth / 2), (scaledImageHeight / 2), 0));
                 modelMatrix = glm::rotate(modelMatrix, glm::radians(rotation), glm::vec3(0.0, 0.0, 1.0));
+                modelMatrix = glm::scale(modelMatrix, glm::vec3(zoom, zoom, 0));
                 modelMatrix = glm::translate(modelMatrix, glm::vec3(-(scaledImageWidth / 2), -(scaledImageHeight / 2), 0));
-                modelMatrix = glm::scale(modelMatrix, glm::vec3(imageWidthScale, imageHeightScale, 0));
+                //modelMatrix = glm::scale(modelMatrix, glm::vec3(imageWidthScale, imageHeightScale, 0));
                 glm::mat4 mvp = projectionMatrix * viewMatrix * modelMatrix;
                 shader.Bind();
                 shader.SetUniformMat4f("u_MVP", mvp);
@@ -291,7 +338,7 @@ int main(void)
             }
 
             //test += 0.1f;
-            rotatedImage = false;
+            //rotatedImage = false;
 
             // ImGui debug window elements
             {
@@ -301,9 +348,11 @@ int main(void)
                 //ImGui::SliderFloat3("Translation B", &translationB.x, 0.0f, 960.0f); // Edit 1 float using a slider from 0.0f to 960.0f
 
                 ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
+                /*
                 if(ImGui::SliderFloat("Rotation", &rotation, -360.0f, 360.0f)){
                     rotatedImage = true;
                 };
+                */
                 ImGui::Text("Image resolution: %i x %i", imageWidth, imageHeight);
                 ImGui::Text("Window resolution: %i x %i", windowWidth, windowHeight);
                 //ImGui::Text("Left Bottom: %.1f x %1.f", float(((windowWidth / 2) - (imageWidth / 2))), (float)((windowHeight / 2) - (imageHeight / 2)));
@@ -330,4 +379,19 @@ int main(void)
     //ImGui::DestroyContext();
     glfwTerminate();
     return 0;
+}
+
+/*
+void window_size_callback(GLFWwindow* window, int width, int height){
+    if(isWindowResizedByCode) return;
+    std::cout << "quick check" << std::endl;
+}
+*/
+
+void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
+{
+    if(yoffset == -1 && zoom > 0.19f)
+        zoom -= 0.1f;
+    else if(yoffset == 1 && zoom < 20)
+        zoom += 0.1f;
 }
